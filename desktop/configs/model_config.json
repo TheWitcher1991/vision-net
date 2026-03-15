@@ -1,0 +1,17 @@
+{
+    "model_name": "VisionNetAdapter",
+    "in_channels": 3,
+    "num_classes": 9,
+    "image_size": 512,
+    "classes": [
+        "stem",
+        "flower",
+        "fruit",
+        "powdery_mildew_severity_1",
+        "powdery_mildew_severity_2",
+        "powdery_mildew_severity_3",
+        "powdery_mildew_severity_4",
+        "powdery_mildew_severity_5",
+        "powdery_mildew_severity_6"
+    ]
+}
