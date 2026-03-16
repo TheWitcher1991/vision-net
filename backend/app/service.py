@@ -124,7 +124,22 @@ class InferenceService:
             if object_mask.sum() > 0:
                 confidence = float(prob_map[object_mask].mean())
                 class_name = self.classes[i] if i < len(self.classes) else f"class_{i}"
-                detected_classes.append({"class": class_name, "confidence": confidence})
+                rows = np.any(object_mask, axis=1)
+                cols = np.any(object_mask, axis=0)
+                if rows.any() and cols.any():
+                    bbox = {
+                        "x_min": int(np.where(cols)[0][0]),
+                        "y_min": int(np.where(rows)[0][0]),
+                        "x_max": int(np.where(cols)[0][-1]),
+                        "y_max": int(np.where(rows)[0][-1]),
+                    }
+                else:
+                    bbox = {"x_min": 0, "y_min": 0, "x_max": W, "y_max": H}
+                detected_classes.append({
+                    "class": class_name,
+                    "confidence": confidence,
+                    "bbox": bbox
+                })
 
         if np.all(mask == 0):
             detected_classes = []

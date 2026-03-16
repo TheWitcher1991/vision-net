@@ -51,6 +51,7 @@ class CVATRegistry:
         annotation_ids = [
             188,
             187,
+            185,
             180,
             127,
             122,
@@ -71,6 +72,8 @@ class CVATRegistry:
             49,
             44,
             43,
+            37,
+            36,
         ]
 
         for annotation_id in annotation_ids:
@@ -95,8 +98,16 @@ class CVATRegistry:
                         old_id = cat["id"]
 
                         name = cat.get("name", "").strip().lower()
-                        if not name.startswith("tomato_"):
-                            name = f"tomato_{name}"
+
+                        if "лист" in name or "leaf" in name:
+                            name = "tomato_leaf"
+                        elif "стебель" in name or "stem" in name:
+                            name = "tomato_stem"
+                        elif "плод" in name or "fruit" in name:
+                            name = "tomato_fruit"
+                        else:
+                            name = "tomato_leaf"
+
                         cat["name"] = name
 
                         if old_id not in self.category_map:

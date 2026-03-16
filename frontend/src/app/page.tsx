@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   listModels,
   loadModel,
@@ -18,6 +19,7 @@ import {
   runInference,
   checkHealth,
   type InferenceResult,
+  type BoundingBox,
 } from "@/lib/api";
 
 export default function InferencePage() {
@@ -30,6 +32,35 @@ export default function InferencePage() {
   const [isHealthy, setIsHealthy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoveredClass, setHoveredClass] = useState<string | null>(null);
+  const [focusEnabled, setFocusEnabled] = useState(false);
+
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  const imageTransform = useMemo(() => {
+    if (!focusEnabled || !hoveredClass || !result || !imageDimensions) return null;
+    
+    const cls = result.detected_classes.find(c => c.class === hoveredClass);
+    if (!cls?.bbox) return null;
+
+    const bbox = cls.bbox;
+    const imgWidth = imageDimensions.width;
+    const imgHeight = imageDimensions.height;
+    
+    const centerX = (bbox.x_min + bbox.x_max) / 2;
+    const centerY = (bbox.y_min + bbox.y_max) / 2;
+    const bboxWidth = bbox.x_max - bbox.x_min;
+    const bboxHeight = bbox.y_max - bbox.y_min;
+    
+    const scale = Math.min(imgWidth / bboxWidth, imgHeight / bboxHeight, 2.5);
+    
+    const translateX = 50 - (centerX / imgWidth) * 100 * scale;
+    const translateY = 50 - (centerY / imgHeight) * 100 * scale;
+    
+    return {
+      transform: `translate(${translateX}%, ${translateY}%) scale(${scale})`,
+      transformOrigin: 'center center',
+    };
+  }, [focusEnabled, hoveredClass, result, imageDimensions]);
 
   const handleListModels = async () => {
     try {
@@ -184,9 +215,18 @@ export default function InferencePage() {
             <CardContent className="space-y-4">
               {result.detected_classes.length > 0 ? (
                 <div className="space-y-2">
-                  <h3 className="font-medium">
-                    Обнаруженные классы (наведите для подсветки):
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium">
+                      Обнаруженные классы (наведите для подсветки):
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Фокусировка</span>
+                      <Switch
+                        checked={focusEnabled}
+                        onCheckedChange={setFocusEnabled}
+                      />
+                    </div>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {result.detected_classes.map((cls, idx) => (
                       <span
@@ -207,11 +247,18 @@ export default function InferencePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h3 className="font-medium mb-2">Результат</h3>
-                  <img
-                    src={`data:image/png;base64,${hoveredClass && result.class_overlays?.[hoveredClass] ? result.class_overlays[hoveredClass] : result.overlay}`}
-                    alt="Результат"
-                    className="w-full rounded-lg border"
-                  />
+                  <div className="overflow-hidden rounded-lg border">
+                    <img
+                      src={`data:image/png;base64,${hoveredClass && result.class_overlays?.[hoveredClass] ? result.class_overlays[hoveredClass] : result.overlay}`}
+                      alt="Результат"
+                      className="w-full rounded-lg border transition-transform duration-300"
+                      style={imageTransform || undefined}
+                      onLoad={(e) => {
+                        const img = e.target as HTMLImageElement;
+                        setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                      }}
+                    />
+                  </div>
                 </div>
                 <div>
                   <h3 className="font-medium mb-2">Маска сегментации</h3>
