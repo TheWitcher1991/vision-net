@@ -12,6 +12,13 @@ from utils.config_manager import ConfigManager
 from utils.image_utils import create_overlay
 
 
+CLASS_COLORS = [
+    "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
+    "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9",
+    "#F8B500", "#00CED1", "#FF69B4", "#32CD32", "#FF4500",
+]
+
+
 class InferencePanel(ttk.Frame):
     def __init__(self, parent, main_window):
         super().__init__(parent)
@@ -24,13 +31,13 @@ class InferencePanel(ttk.Frame):
         self.current_mask = None
         self.current_overlay = None
         self.photo_original = None
-        self.photo_mask = None
         self.photo_overlay = None
+        self.log_callback = None
 
         self._setup_ui()
 
     def _setup_ui(self):
-        title_label = ttk.Label(self, text="Распознование", font=("Arial", 16, "bold"))
+        title_label = ttk.Label(self, text="Распознавание", font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
 
         control_frame = ttk.Frame(self)
@@ -46,39 +53,40 @@ class InferencePanel(ttk.Frame):
         self.model_label = ttk.Label(self, text="Модель: Не загружено")
         self.model_label.pack(pady=5)
 
-        display_frame = ttk.Frame(self)
-        display_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        classes_frame = ttk.LabelFrame(self, text="Распознанные классы")
+        classes_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
 
-        display_frame.columnconfigure(0, weight=1)
-        display_frame.columnconfigure(1, weight=1)
-        display_frame.columnconfigure(2, weight=1)
+        self.classes_canvas = tk.Canvas(classes_frame, height=120, bg="#2b2b2b", highlightthickness=0)
+        self.classes_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        ttk.Label(
-            display_frame, text="Исходное изображение", font=("Arial", 12, "bold")
-        ).grid(row=0, column=0, pady=5)
-        ttk.Label(
-            display_frame, text="Маска сегментации", font=("Arial", 12, "bold")
-        ).grid(row=0, column=1, pady=5)
-        ttk.Label(display_frame, text="Наложение", font=("Arial", 12, "bold")).grid(
-            row=0, column=2, pady=5
-        )
+        self.classes_scroll = ttk.Scrollbar(classes_frame, orient="vertical", command=self.classes_canvas.yview)
+        self.classes_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.classes_canvas.configure(yscrollcommand=self.classes_scroll.set)
 
-        self.canvas_original = tk.Canvas(
-            display_frame, width=300, height=300, bg="gray"
-        )
-        self.canvas_original.grid(row=1, column=0, padx=5, pady=5)
+        self.classes_inner = ttk.Frame(self.classes_canvas)
+        self.classes_canvas.create_window((0, 0), window=self.classes_inner, anchor=tk.NW)
+        self.classes_inner.bind("<Configure>", lambda e: self.classes_canvas.configure(scrollregion=self.classes_canvas.bbox("all")))
 
-        self.canvas_mask = tk.Canvas(display_frame, width=300, height=300, bg="gray")
-        self.canvas_mask.grid(row=1, column=1, padx=5, pady=5)
+        self.detected_items = []
 
-        self.canvas_overlay = tk.Canvas(display_frame, width=300, height=300, bg="gray")
-        self.canvas_overlay.grid(row=1, column=2, padx=5, pady=5)
+        images_container = ttk.Frame(self)
+        images_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-        results_frame = ttk.LabelFrame(self, text="Результаты распознования")
-        results_frame.pack(fill=tk.X, padx=20, pady=10)
+        images_container.columnconfigure(0, weight=1)
+        images_container.columnconfigure(1, weight=1)
 
-        self.results_text = tk.Text(results_frame, height=8, state="disabled")
-        self.results_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        left_frame = ttk.Frame(images_container)
+        left_frame.grid(row=0, column=0, padx=10, sticky="nsew")
+        right_frame = ttk.Frame(images_container)
+        right_frame.grid(row=0, column=1, padx=10, sticky="nsew")
+
+        ttk.Label(left_frame, text="Оригинальное изображение", font=("Arial", 12, "bold")).pack(pady=5)
+        self.canvas_original = tk.Canvas(left_frame, width=400, height=400, bg="#1a1a1a")
+        self.canvas_original.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(right_frame, text="Выделение объектов", font=("Arial", 12, "bold")).pack(pady=5)
+        self.canvas_overlay = tk.Canvas(right_frame, width=400, height=400, bg="#1a1a1a")
+        self.canvas_overlay.pack(fill=tk.BOTH, expand=True)
 
     def set_log_callback(self, callback):
         self.log_callback = callback
@@ -196,45 +204,79 @@ class InferencePanel(ttk.Frame):
             messagebox.showerror("Ошибка", f"Вывод не удался: {str(e)}")
 
     def _display_images(self, original, mask, overlay):
-        max_size = 300
+        max_w, max_h = 400, 400
 
         orig_w, orig_h = original.size
-        scale = min(max_size / orig_w, max_size / orig_h)
+        scale = min(max_w / orig_w, max_h / orig_h)
         new_w, new_h = int(orig_w * scale), int(orig_h * scale)
 
         original_resized = original.resize((new_w, new_h), Image.Resampling.BILINEAR)
-        mask_resized = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
         overlay_resized = overlay.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
         self.photo_original = ImageTk.PhotoImage(original_resized)
-        self.photo_mask = ImageTk.PhotoImage(mask_resized)
         self.photo_overlay = ImageTk.PhotoImage(overlay_resized)
+
+        canvas_w = self.canvas_original.winfo_width() or max_w
+        canvas_h = self.canvas_original.winfo_height() or max_h
 
         self.canvas_original.delete("all")
         self.canvas_original.create_image(
-            max_size // 2, max_size // 2, image=self.photo_original, anchor=tk.CENTER
-        )
-
-        self.canvas_mask.delete("all")
-        self.canvas_mask.create_image(
-            max_size // 2, max_size // 2, image=self.photo_mask, anchor=tk.CENTER
+            canvas_w // 2, canvas_h // 2, image=self.photo_original, anchor=tk.CENTER
         )
 
         self.canvas_overlay.delete("all")
         self.canvas_overlay.create_image(
-            max_size // 2, max_size // 2, image=self.photo_overlay, anchor=tk.CENTER
+            canvas_w // 2, canvas_h // 2, image=self.photo_overlay, anchor=tk.CENTER
         )
 
     def _display_results(self, detected_classes):
-        self.results_text.config(state="normal")
-        self.results_text.delete("1.0", tk.END)
-
-        self.results_text.insert("1.0", "Обнаруженные классы:\n\n")
+        for widget in self.classes_inner.winfo_children():
+            widget.destroy()
 
         if not detected_classes:
-            self.results_text.insert(tk.END, "Объект не найден на изображении\n")
+            no_result = ttk.Label(
+                self.classes_inner,
+                text="Объекты не найдены",
+                font=("Arial", 11),
+                foreground="#888888"
+            )
+            no_result.pack(pady=10, padx=10, anchor=tk.W)
+            return
 
-        for class_name, confidence in detected_classes:
-            self.results_text.insert(tk.END, f"{class_name} — {confidence:.2f}\n")
+        for idx, (class_name, confidence) in enumerate(detected_classes):
+            color = CLASS_COLORS[idx % len(CLASS_COLORS)]
+            conf_percent = confidence * 100
 
-        self.results_text.config(state="disabled")
+            item_frame = ttk.Frame(self.classes_inner, style="Custom.TFrame")
+            item_frame.pack(fill=tk.X, padx=5, pady=3)
+
+            color_indicator = tk.Canvas(item_frame, width=6, height=30, bg=color, highlightthickness=0)
+            color_indicator.pack(side=tk.LEFT, padx=(0, 8))
+
+            info_frame = ttk.Frame(item_frame)
+            info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            class_label = ttk.Label(
+                info_frame,
+                text=class_name,
+                font=("Arial", 11, "bold"),
+                foreground=color
+            )
+            class_label.pack(anchor=tk.W)
+
+            conf_label = ttk.Label(
+                info_frame,
+                text=f"Уверенность: {conf_percent:.1f}%",
+                font=("Arial", 9),
+                foreground="#aaaaaa"
+            )
+            conf_label.pack(anchor=tk.W)
+
+            bar_frame = ttk.Frame(item_frame, style="Custom.TFrame")
+            bar_frame.pack(side=tk.LEFT, padx=(10, 0))
+
+            bar_bg = tk.Canvas(bar_frame, width=100, height=8, bg="#3a3a3a", highlightthickness=0)
+            bar_bg.pack()
+
+            bar_fill = tk.Canvas(bar_frame, width=int(conf_percent), height=8, bg=color, highlightthickness=0)
+            bar_fill.place(x=0, y=0)
