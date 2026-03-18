@@ -54,18 +54,10 @@ class InferencePanel(ttk.Frame):
         self.model_label.pack(pady=5)
 
         classes_frame = ttk.LabelFrame(self, text="Распознанные классы")
-        classes_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
+        classes_frame.pack(fill=tk.X, padx=20, pady=10)
 
-        self.classes_canvas = tk.Canvas(classes_frame, height=120, bg="#2b2b2b", highlightthickness=0)
-        self.classes_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        self.classes_scroll = ttk.Scrollbar(classes_frame, orient="vertical", command=self.classes_canvas.yview)
-        self.classes_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.classes_canvas.configure(yscrollcommand=self.classes_scroll.set)
-
-        self.classes_inner = ttk.Frame(self.classes_canvas)
-        self.classes_canvas.create_window((0, 0), window=self.classes_inner, anchor=tk.NW)
-        self.classes_inner.bind("<Configure>", lambda e: self.classes_canvas.configure(scrollregion=self.classes_canvas.bbox("all")))
+        self.tags_container = ttk.Frame(classes_frame)
+        self.tags_container.pack(fill=tk.X, padx=10, pady=8)
 
         self.detected_items = []
 
@@ -186,6 +178,10 @@ class InferencePanel(ttk.Frame):
 
             overlay_img = create_overlay(original_img, mask_img, alpha=0.5)
 
+            self.current_original = original_img
+            self.current_mask = mask_img
+            self.current_overlay = overlay_img
+
             self._display_images(original_img, mask_img, overlay_img)
             self._display_results(detected_classes)
 
@@ -230,12 +226,15 @@ class InferencePanel(ttk.Frame):
         )
 
     def _display_results(self, detected_classes):
-        for widget in self.classes_inner.winfo_children():
+        for widget in self.tags_container.winfo_children():
             widget.destroy()
+
+        self.detected_items = []
+        self.current_class_indices = {}
 
         if not detected_classes:
             no_result = ttk.Label(
-                self.classes_inner,
+                self.tags_container,
                 text="Объекты не найдены",
                 font=("Arial", 11),
                 foreground="#888888"
@@ -243,40 +242,31 @@ class InferencePanel(ttk.Frame):
             no_result.pack(pady=10, padx=10, anchor=tk.W)
             return
 
+        class_idx_map = {}
+        for idx, (class_name, _) in enumerate(detected_classes):
+            class_idx_map[class_name] = idx
+
         for idx, (class_name, confidence) in enumerate(detected_classes):
             color = CLASS_COLORS[idx % len(CLASS_COLORS)]
             conf_percent = confidence * 100
 
-            item_frame = ttk.Frame(self.classes_inner, style="Custom.TFrame")
-            item_frame.pack(fill=tk.X, padx=5, pady=3)
+            tag_frame = tk.Frame(self.tags_container, bg=color, bd=0, padx=8, pady=4)
+            tag_frame.pack(side=tk.LEFT, padx=4, pady=4)
 
-            color_indicator = tk.Canvas(item_frame, width=6, height=30, bg=color, highlightthickness=0)
-            color_indicator.pack(side=tk.LEFT, padx=(0, 8))
-
-            info_frame = ttk.Frame(item_frame)
-            info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-            class_label = ttk.Label(
-                info_frame,
-                text=class_name,
-                font=("Arial", 11, "bold"),
-                foreground=color
+            tag_label = tk.Label(
+                tag_frame,
+                text=f"{class_name} {conf_percent:.0f}%",
+                bg=color,
+                fg="#000000",
+                font=("Arial", 10, "bold"),
+                padx=4,
+                pady=2
             )
-            class_label.pack(anchor=tk.W)
+            tag_label.pack()
 
-            conf_label = ttk.Label(
-                info_frame,
-                text=f"Уверенность: {conf_percent:.1f}%",
-                font=("Arial", 9),
-                foreground="#aaaaaa"
-            )
-            conf_label.pack(anchor=tk.W)
-
-            bar_frame = ttk.Frame(item_frame, style="Custom.TFrame")
-            bar_frame.pack(side=tk.LEFT, padx=(10, 0))
-
-            bar_bg = tk.Canvas(bar_frame, width=100, height=8, bg="#3a3a3a", highlightthickness=0)
-            bar_bg.pack()
-
-            bar_fill = tk.Canvas(bar_frame, width=int(conf_percent), height=8, bg=color, highlightthickness=0)
-            bar_fill.place(x=0, y=0)
+            self.detected_items.append({
+                "frame": tag_frame,
+                "label": tag_label,
+                "color": color,
+                "class_name": class_name
+            })
