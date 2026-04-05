@@ -1,6 +1,6 @@
+import colorsys
 import io
 import json
-import colorsys
 from pathlib import Path
 
 import numpy as np
@@ -135,11 +135,9 @@ class InferenceService:
                     }
                 else:
                     bbox = {"x_min": 0, "y_min": 0, "x_max": W, "y_max": H}
-                detected_classes.append({
-                    "class": class_name,
-                    "confidence": confidence,
-                    "bbox": bbox
-                })
+                detected_classes.append(
+                    {"class": class_name, "confidence": confidence, "bbox": bbox}
+                )
 
         if np.all(mask == 0):
             detected_classes = []
@@ -147,7 +145,9 @@ class InferenceService:
         mask_image = Image.fromarray(mask.astype(np.uint8))
         return mask_image, detected_classes
 
-    def create_overlay(self, original: Image.Image, mask: Image.Image, alpha: float = 0.5):
+    def create_overlay(
+        self, original: Image.Image, mask: Image.Image, alpha: float = 0.5
+    ):
         mask_np = np.array(mask)
         original_np = np.array(original)
 
@@ -161,47 +161,51 @@ class InferenceService:
             if class_mask.sum() > 0:
                 color = colors[class_id % len(colors)]
                 overlay_np[class_mask] = (
-                    (1 - alpha) * original_np[class_mask] + 
-                    alpha * np.array(color)
+                    (1 - alpha) * original_np[class_mask] + alpha * np.array(color)
                 ).astype(np.uint8)
-                
-                border_mask = self._get_boundary_mask(class_mask, thickness=3)
+
+                border_mask = self._get_boundary_mask(class_mask, thickness=6)
                 overlay_np[border_mask] = color
 
         return Image.fromarray(overlay_np)
 
-    def create_class_overlay(self, original: Image.Image, mask: Image.Image, class_id: int, alpha: float = 0.5):
+    def create_class_overlay(
+        self,
+        original: Image.Image,
+        mask: Image.Image,
+        class_id: int,
+        alpha: float = 0.5,
+    ):
         mask_np = np.array(mask)
         original_np = np.array(original)
-        
+
         num_classes = len(self.classes)
         colors = self._generate_colors(num_classes)
-        
+
         overlay_np = original_np.copy()
-        
+
         class_mask = mask_np == class_id
         if class_mask.sum() > 0:
             color = colors[class_id % len(colors)]
             overlay_np[class_mask] = (
-                (1 - alpha) * original_np[class_mask] + 
-                alpha * np.array(color)
+                (1 - alpha) * original_np[class_mask] + alpha * np.array(color)
             ).astype(np.uint8)
-            
-            border_mask = self._get_boundary_mask(class_mask, thickness=4)
+
+            border_mask = self._get_boundary_mask(class_mask, thickness=6)
             overlay_np[border_mask] = (255, 255, 255)
-            
-            inner_border = self._get_boundary_mask(class_mask, thickness=2)
+
+            inner_border = self._get_boundary_mask(class_mask, thickness=6)
             overlay_np[inner_border] = color
-        
+
         return Image.fromarray(overlay_np)
 
     def _get_boundary_mask(self, mask: np.ndarray, thickness: int = 3) -> np.ndarray:
         from scipy import ndimage
-        
+
         kernel = np.ones((thickness, thickness), dtype=np.uint8)
         dilated = ndimage.binary_dilation(mask, structure=kernel)
         boundary = dilated & ~mask
-        
+
         return boundary
 
     def _generate_colors(self, num_classes: int):
@@ -215,12 +219,26 @@ class InferenceService:
 
     def _hsv_to_rgb(self, h, s, v):
         import colorsys
+
         rgb = colorsys.hsv_to_rgb(h, s, v)
         return tuple(int(x * 255) for x in rgb)
 
+    def create_colorized_mask(self, mask: Image.Image) -> Image.Image:
+        mask_np = np.array(mask)
+        h, w = mask_np.shape
+        colorized = np.zeros((h, w, 3), dtype=np.uint8)
+        
+        num_classes = len(self.classes)
+        colors = self._generate_colors(num_classes)
+        
+        for class_id in range(num_classes):
+            colorized[mask_np == class_id] = colors[class_id]
+        
+        return Image.fromarray(colorized)
+
     def infer(self, image_bytes: bytes) -> dict:
         import base64
-        
+
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         image_tensor, original_size, original_image = self.preprocess(image)
@@ -233,8 +251,9 @@ class InferenceService:
         original_image.save(output, format="PNG")
         original_b64 = output.getvalue()
 
+        colorized_mask = self.create_colorized_mask(mask_image)
         output = io.BytesIO()
-        mask_image.save(output, format="PNG")
+        colorized_mask.save(output, format="PNG")
         mask_b64 = output.getvalue()
 
         output = io.BytesIO()
@@ -244,12 +263,18 @@ class InferenceService:
         class_overlays = {}
         for cls in detected_classes:
             class_name = cls["class"]
-            class_id = self.classes.index(class_name) if class_name in self.classes else -1
+            class_id = (
+                self.classes.index(class_name) if class_name in self.classes else -1
+            )
             if class_id > 0:
-                class_overlay = self.create_class_overlay(original_image, mask_image, class_id, alpha=0.6)
+                class_overlay = self.create_class_overlay(
+                    original_image, mask_image, class_id, alpha=0.6
+                )
                 output = io.BytesIO()
                 class_overlay.save(output, format="PNG")
-                class_overlays[class_name] = base64.b64encode(output.getvalue()).decode()
+                class_overlays[class_name] = base64.b64encode(
+                    output.getvalue()
+                ).decode()
 
         return {
             "original_image": base64.b64encode(original_b64).decode(),

@@ -24,23 +24,17 @@ class VisionNetAdapter(nn.Module):
         super(VisionNetAdapter, self).__init__()
 
         if backbone == Backbone.resnet50:
-            if pretrained:
-                self.model = deeplabv3_resnet50(
-                    weights=DeepLabV3_ResNet50_Weights.DEFAULT, **kwargs
-                )
-            else:
-                self.model = deeplabv3_resnet50(
-                    pretrained=False, num_classes=num_classes, **kwargs
-                )
+            weights = DeepLabV3_ResNet50_Weights.DEFAULT if pretrained else None
+            self.model = deeplabv3_resnet50(
+                weights=weights, aux_loss=use_aux_loss, **kwargs
+            )
         elif backbone == Backbone.resnet101:
-            if pretrained:
-                self.model = deeplabv3_resnet101(
-                    weights=DeepLabV3_ResNet101_Weights.DEFAULT, **kwargs
-                )
-            else:
-                self.model = deeplabv3_resnet101(
-                    pretrained=False, num_classes=num_classes, **kwargs
-                )
+            weights = DeepLabV3_ResNet101_Weights.DEFAULT if pretrained else None
+            self.model = deeplabv3_resnet101(
+                weights=weights, aux_loss=use_aux_loss, **kwargs
+            )
+        else:
+            raise ValueError("Unsupported backbone")
 
         in_channels = self.model.classifier[4].in_channels
         self.model.classifier[4] = nn.Conv2d(in_channels, num_classes, kernel_size=1)
@@ -55,6 +49,7 @@ class VisionNetAdapter(nn.Module):
         self.use_assp = use_aspp
         if use_aspp:
             self.assp = ASPP(2048, 256)
+            self.model.classifier[0] = self.assp
 
         self.num_classes = num_classes
 
